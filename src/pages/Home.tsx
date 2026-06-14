@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
   Plus,
   Stethoscope,
@@ -8,6 +8,11 @@ import {
   Coins,
   XCircle,
   Sparkles,
+  Download,
+  Ruler,
+  TrendingUp,
+  Scale,
+  Baby,
 } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import ChildCard from "@/components/ChildCard";
@@ -16,22 +21,30 @@ import VaccineRecordModal from "@/components/VaccineRecordModal";
 import VaccineTimelineItem from "@/components/VaccineTimelineItem";
 import SelfPaidVaccineTimelineItem from "@/components/SelfPaidVaccineTimelineItem";
 import SelfPaidVaccineRecordModal from "@/components/SelfPaidVaccineRecordModal";
+import HealthCheckupModal from "@/components/HealthCheckupModal";
+import HealthCheckupItem from "@/components/HealthCheckupItem";
+import GrowthChart, { type GrowthChartRef } from "@/components/GrowthChart";
 import EmptyState from "@/components/EmptyState";
 import type {
   Child,
   VaccineRecord,
   SelfPaidVaccineRecord,
+  HealthCheckupRecord,
+  GrowthMetricType,
 } from "@/types";
 import { isOverdue, getDaysUntil } from "@/utils/dateUtils";
+import { exportGrowthPdf } from "@/utils/pdfExport";
 
 type FilterType = "all" | "pending" | "vaccinated" | "overdue";
 type SelfPaidFilterType = "all" | "recommended" | "vaccinated" | "skipped";
+type TabType = "vaccine" | "selfPaid" | "checkup";
 
 export default function Home() {
   const {
     children,
     vaccineRecords,
     selfPaidVaccineRecords,
+    healthCheckupRecords,
     selectedChildId,
     addChild,
     updateChild,
@@ -42,6 +55,9 @@ export default function Home() {
     markSelfPaidVaccinated,
     skipSelfPaidVaccine,
     resetSelfPaidVaccine,
+    addHealthCheckupRecord,
+    updateHealthCheckupRecord,
+    deleteHealthCheckupRecord,
   } = useAppStore();
 
   const [isAddChildModalOpen, setIsAddChildModalOpen] = useState(false);
@@ -57,6 +73,14 @@ export default function Home() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [selfPaidFilter, setSelfPaidFilter] =
     useState<SelfPaidFilterType>("all");
+  const [activeTab, setActiveTab] = useState<TabType>("vaccine");
+  const [isCheckupModalOpen, setIsCheckupModalOpen] = useState(false);
+  const [editingCheckupRecord, setEditingCheckupRecord] =
+    useState<HealthCheckupRecord | null>(null);
+  const [growthMetric, setGrowthMetric] = useState<GrowthMetricType>("height");
+  const heightChartRef = useRef<GrowthChartRef>(null);
+  const weightChartRef = useRef<GrowthChartRef>(null);
+  const headChartRef = useRef<GrowthChartRef>(null);
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
 
@@ -161,6 +185,28 @@ export default function Home() {
     return { total, vaccinated, recommended, skipped, overdue };
   }, [selfPaidChildRecords]);
 
+  const checkupRecords = useMemo(() => {
+    if (!selectedChildId) return [];
+    return healthCheckupRecords.filter((r) => r.childId === selectedChildId);
+  }, [healthCheckupRecords, selectedChildId]);
+
+  const sortedCheckupRecords = useMemo(() => {
+    return [...checkupRecords].sort(
+      (a, b) =>
+        new Date(b.checkupDate).getTime() - new Date(a.checkupDate).getTime()
+    );
+  }, [checkupRecords]);
+
+  const checkupStats = useMemo(() => {
+    const total = checkupRecords.length;
+    const hasHeight = checkupRecords.filter((r) => r.height !== undefined).length;
+    const hasWeight = checkupRecords.filter((r) => r.weight !== undefined).length;
+    const hasHead = checkupRecords.filter(
+      (r) => r.headCircumference !== undefined).length;
+    const lastRecord = sortedCheckupRecords[0];
+    return { total, hasHeight, hasWeight, hasHead, lastRecord };
+  }, [checkupRecords, sortedCheckupRecords]);
+
   const getChildVaccineStats = (childId: string) => {
     const records = vaccineRecords.filter((r) => r.childId === childId);
     return {
@@ -242,6 +288,53 @@ export default function Home() {
     batchNumber?: string
   ) => {
     markSelfPaidVaccinated(recordId, vaccinationDate, institution, batchNumber);
+  };
+
+  const handleAddCheckup = () => {
+    setEditingCheckupRecord(null);
+    setIsCheckupModalOpen(true);
+  };
+
+  const handleEditCheckup = (record: HealthCheckupRecord) => {
+    setEditingCheckupRecord(record);
+    setIsCheckupModalOpen(true);
+  };
+
+  const handleDeleteCheckup = (recordId: string) => {
+    if (window.confirm("确定要删除这条体检记录吗？")) {
+      deleteHealthCheckupRecord(recordId);
+    }
+  };
+
+  const handleCheckupSubmit = (
+    data: Omit<HealthCheckupRecord, "id"> & { id?: string }
+  ) => {
+    if (editingCheckupRecord) {
+      updateHealthCheckupRecord(editingCheckupRecord.id, data);
+    } else {
+      addHealthCheckupRecord(data);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!selectedChild) return;
+
+    const chartSvgs = {
+      height: heightChartRef.current?.getSvgElement() || null,
+      weight: weightChartRef.current?.getSvgElement() || null,
+      headCircumference: headChartRef.current?.getSvgElement() || null,
+    };
+
+    try {
+      await exportGrowthPdf({
+        child: selectedChild,
+        records: checkupRecords,
+        chartSvgs,
+      });
+    } catch (error) {
+      console.error("导出 PDF 失败:", error);
+      alert("导出 PDF 失败，请重试");
+    }
   };
 
   if (children.length === 0) {
@@ -349,7 +442,7 @@ export default function Home() {
                     >
                       {selectedChild.gender === "male" ? "👦" : "👧"}
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <h2 className="text-2xl font-bold text-gray-800">
                         {selectedChild.name}
                       </h2>
@@ -357,157 +450,353 @@ export default function Home() {
                         出生于 {selectedChild.birthDate}
                       </p>
                     </div>
+                    {activeTab === "checkup" && checkupRecords.length > 0 && (
+                      <button
+                        onClick={handleExportPdf}
+                        className="btn-outline flex items-center gap-2 text-sm"
+                      >
+                        <Download size={16} />
+                        导出PDF
+                      </button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <p className="text-xs text-gray-500 mb-1">总疫苗剂数</p>
-                      <p className="text-2xl font-bold text-gray-800">
-                        {stats.total}
-                      </p>
-                    </div>
-                    <div className="bg-success-50 rounded-xl p-4">
-                      <p className="text-xs text-success-600 mb-1">已接种</p>
-                      <p className="text-2xl font-bold text-success-700">
-                        {stats.vaccinated}
-                      </p>
-                    </div>
-                    <div className="bg-primary-50 rounded-xl p-4">
-                      <p className="text-xs text-primary-600 mb-1">30天内到期</p>
-                      <p className="text-2xl font-bold text-primary-700">
-                        {stats.upcoming}
-                      </p>
-                    </div>
-                    <div className="bg-danger-50 rounded-xl p-4">
-                      <p className="text-xs text-danger-600 mb-1">已逾期</p>
-                      <p className="text-2xl font-bold text-danger-700">
-                        {stats.overdue}
-                      </p>
-                    </div>
+                    {activeTab === "vaccine" && (
+                      <>
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          <p className="text-xs text-gray-500 mb-1">总疫苗剂数</p>
+                          <p className="text-2xl font-bold text-gray-800">
+                            {stats.total}
+                          </p>
+                        </div>
+                        <div className="bg-success-50 rounded-xl p-4">
+                          <p className="text-xs text-success-600 mb-1">已接种</p>
+                          <p className="text-2xl font-bold text-success-700">
+                            {stats.vaccinated}
+                          </p>
+                        </div>
+                        <div className="bg-primary-50 rounded-xl p-4">
+                          <p className="text-xs text-primary-600 mb-1">30天内到期</p>
+                          <p className="text-2xl font-bold text-primary-700">
+                            {stats.upcoming}
+                          </p>
+                        </div>
+                        <div className="bg-danger-50 rounded-xl p-4">
+                          <p className="text-xs text-danger-600 mb-1">已逾期</p>
+                          <p className="text-2xl font-bold text-danger-700">
+                            {stats.overdue}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                    {activeTab === "selfPaid" && (
+                      <>
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          <p className="text-xs text-gray-500 mb-1">总剂数</p>
+                          <p className="text-2xl font-bold text-gray-800">
+                            {selfPaidStats.total}
+                          </p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4">
+                          <p className="text-xs text-amber-600 mb-1">建议接种</p>
+                          <p className="text-2xl font-bold text-amber-700">
+                            {selfPaidStats.recommended}
+                          </p>
+                        </div>
+                        <div className="bg-success-50 rounded-xl p-4">
+                          <p className="text-xs text-success-600 mb-1">已接种</p>
+                          <p className="text-2xl font-bold text-success-700">
+                            {selfPaidStats.vaccinated}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          <p className="text-xs text-gray-500 mb-1">不打算接种</p>
+                          <p className="text-2xl font-bold text-gray-600">
+                            {selfPaidStats.skipped}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                    {activeTab === "checkup" && (
+                      <>
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          <p className="text-xs text-gray-500 mb-1">体检次数</p>
+                          <p className="text-2xl font-bold text-gray-800">
+                            {checkupStats.total}
+                          </p>
+                        </div>
+                        <div className="bg-primary-50 rounded-xl p-4">
+                          <p className="text-xs text-primary-600 mb-1">身高记录</p>
+                          <p className="text-2xl font-bold text-primary-700">
+                            {checkupStats.hasHeight}
+                          </p>
+                        </div>
+                        <div className="bg-success-50 rounded-xl p-4">
+                          <p className="text-xs text-success-600 mb-1">体重记录</p>
+                          <p className="text-2xl font-bold text-success-700">
+                            {checkupStats.hasWeight}
+                          </p>
+                        </div>
+                        <div className="bg-warning-50 rounded-xl p-4">
+                          <p className="text-xs text-warning-600 mb-1">头围记录</p>
+                          <p className="text-2xl font-bold text-warning-700">
+                            {checkupStats.hasHead}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
                 <div className="card p-6">
                   <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-                    <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                      <Syringe className="text-primary-500" size={22} />
-                      疫苗接种时间表
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {filterOptions.map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setFilter(opt.key)}
-                          className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
-                            filter === opt.key
-                              ? "bg-primary-500 text-white shadow-md"
-                              : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                          }`}
-                        >
-                          {opt.icon}
-                          {opt.label}
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl">
+                      <button
+                        onClick={() => setActiveTab("vaccine")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                          activeTab === "vaccine"
+                            ? "bg-white text-primary-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <Syringe size={16} />
+                        疫苗接种
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("selfPaid")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                          activeTab === "selfPaid"
+                            ? "bg-white text-amber-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <Sparkles size={16} />
+                        自费疫苗
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("checkup")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                          activeTab === "checkup"
+                            ? "bg-white text-success-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <Stethoscope size={16} />
+                        体检记录
+                      </button>
                     </div>
+
+                    {activeTab === "checkup" && (
+                      <button
+                        onClick={handleAddCheckup}
+                        className="btn-success flex items-center gap-2 text-sm"
+                      >
+                        <Plus size={16} />
+                        添加记录
+                      </button>
+                    )}
                   </div>
 
-                  {filteredRecords.length > 0 ? (
-                    <div className="mt-4">
-                      {filteredRecords.map((record) => (
-                        <VaccineTimelineItem
-                          key={record.id}
-                          record={record}
-                          onMarkVaccinated={handleMarkVaccinated}
-                          onUnmarkVaccinated={handleUnmarkVaccinated}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 text-gray-400">
-                      <Syringe size={48} className="mx-auto mb-3 opacity-30" />
-                      <p>暂无{filterOptions.find((f) => f.key === filter)?.label}的疫苗记录</p>
-                    </div>
-                  )}
-                </div>
+                  {activeTab === "vaccine" && (
+                    <>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {filterOptions.map((opt) => (
+                          <button
+                            key={opt.key}
+                            onClick={() => setFilter(opt.key)}
+                            className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                              filter === opt.key
+                                ? "bg-primary-500 text-white shadow-md"
+                                : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                            }`}
+                          >
+                            {opt.icon}
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
 
-                <div className="card p-6 mt-6">
-                  <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-                    <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                      <Sparkles className="text-amber-500" size={22} />
-                      自费疫苗建议
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {selfPaidFilterOptions.map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setSelfPaidFilter(opt.key)}
-                          className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
-                            selfPaidFilter === opt.key
-                              ? "bg-amber-500 text-white shadow-md"
-                              : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                          }`}
-                        >
-                          {opt.icon}
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <p className="text-xs text-gray-500 mb-1">总剂数</p>
-                      <p className="text-2xl font-bold text-gray-800">
-                        {selfPaidStats.total}
-                      </p>
-                    </div>
-                    <div className="bg-amber-50 rounded-xl p-4">
-                      <p className="text-xs text-amber-600 mb-1">建议接种</p>
-                      <p className="text-2xl font-bold text-amber-700">
-                        {selfPaidStats.recommended}
-                      </p>
-                    </div>
-                    <div className="bg-success-50 rounded-xl p-4">
-                      <p className="text-xs text-success-600 mb-1">已接种</p>
-                      <p className="text-2xl font-bold text-success-700">
-                        {selfPaidStats.vaccinated}
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <p className="text-xs text-gray-500 mb-1">不打算接种</p>
-                      <p className="text-2xl font-bold text-gray-600">
-                        {selfPaidStats.skipped}
-                      </p>
-                    </div>
-                  </div>
-
-                  {selfPaidStats.overdue > 0 && (
-                    <div className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-xl flex items-center gap-3">
-                      <ShieldAlert className="text-danger-500 flex-shrink-0" size={22} />
-                      <p className="text-sm text-danger-700">
-                        有 <span className="font-bold">{selfPaidStats.overdue}</span> 剂自费疫苗已超过建议接种日期，请尽快安排。
-                      </p>
-                    </div>
+                      {filteredRecords.length > 0 ? (
+                        <div className="mt-4">
+                          {filteredRecords.map((record) => (
+                            <VaccineTimelineItem
+                              key={record.id}
+                              record={record}
+                              onMarkVaccinated={handleMarkVaccinated}
+                              onUnmarkVaccinated={handleUnmarkVaccinated}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 text-gray-400">
+                          <Syringe size={48} className="mx-auto mb-3 opacity-30" />
+                          <p>暂无{filterOptions.find((f) => f.key === filter)?.label}的疫苗记录</p>
+                        </div>
+                      )}
+                    </>
                   )}
 
-                  {filteredSelfPaidRecords.length > 0 ? (
-                    <div className="mt-4">
-                      {filteredSelfPaidRecords.map((record) => (
-                        <SelfPaidVaccineTimelineItem
-                          key={record.id}
-                          record={record}
-                          onMarkVaccinated={handleMarkSelfPaidVaccinated}
-                          onSkip={handleSkipSelfPaid}
-                          onReset={handleResetSelfPaid}
-                          onUnmarkVaccinated={handleUnmarkSelfPaidVaccinated}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 text-gray-400">
-                      <Coins size={48} className="mx-auto mb-3 opacity-30" />
-                      <p>暂无{selfPaidFilterOptions.find((f) => f.key === selfPaidFilter)?.label}的自费疫苗记录</p>
-                    </div>
+                  {activeTab === "selfPaid" && (
+                    <>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {selfPaidFilterOptions.map((opt) => (
+                          <button
+                            key={opt.key}
+                            onClick={() => setSelfPaidFilter(opt.key)}
+                            className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                              selfPaidFilter === opt.key
+                                ? "bg-amber-500 text-white shadow-md"
+                                : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                            }`}
+                          >
+                            {opt.icon}
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {selfPaidStats.overdue > 0 && (
+                        <div className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-xl flex items-center gap-3">
+                          <ShieldAlert className="text-danger-500 flex-shrink-0" size={22} />
+                          <p className="text-sm text-danger-700">
+                            有 <span className="font-bold">{selfPaidStats.overdue}</span> 剂自费疫苗已超过建议接种日期，请尽快安排。
+                          </p>
+                        </div>
+                      )}
+
+                      {filteredSelfPaidRecords.length > 0 ? (
+                        <div className="mt-4">
+                          {filteredSelfPaidRecords.map((record) => (
+                            <SelfPaidVaccineTimelineItem
+                              key={record.id}
+                              record={record}
+                              onMarkVaccinated={handleMarkSelfPaidVaccinated}
+                              onSkip={handleSkipSelfPaid}
+                              onReset={handleResetSelfPaid}
+                              onUnmarkVaccinated={handleUnmarkSelfPaidVaccinated}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 text-gray-400">
+                          <Coins size={48} className="mx-auto mb-3 opacity-30" />
+                          <p>暂无{selfPaidFilterOptions.find((f) => f.key === selfPaidFilter)?.label}的自费疫苗记录</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {activeTab === "checkup" && (
+                    <>
+                      {checkupRecords.length > 0 ? (
+                        <>
+                          <div className="mb-8">
+                            <h4 className="text-md font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                              <TrendingUp className="text-primary-500" size={20} />
+                              生长百分位趋势图
+                            </h4>
+
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              {(["height", "weight", "headCircumference"] as GrowthMetricType[]).map((metric) => (
+                                <button
+                                  key={metric}
+                                  onClick={() => setGrowthMetric(metric)}
+                                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                                    growthMetric === metric
+                                      ? "bg-success-500 text-white shadow-md"
+                                      : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                                  }`}
+                                >
+                                  {metric === "height" && <Ruler size={16} />}
+                                  {metric === "weight" && <Scale size={16} />}
+                                  {metric === "headCircumference" && <Baby size={16} />}
+                                  {metric === "height" && "身高"}
+                                  {metric === "weight" && "体重"}
+                                  {metric === "headCircumference" && "头围"}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="hidden">
+                              <GrowthChart
+                                ref={heightChartRef}
+                                child={selectedChild}
+                                records={checkupRecords}
+                                metric="height"
+                              />
+                              <GrowthChart
+                                ref={weightChartRef}
+                                child={selectedChild}
+                                records={checkupRecords}
+                                metric="weight"
+                              />
+                              <GrowthChart
+                                ref={headChartRef}
+                                child={selectedChild}
+                                records={checkupRecords}
+                                metric="headCircumference"
+                              />
+                            </div>
+
+                            {growthMetric === "height" && (
+                              <GrowthChart
+                                child={selectedChild}
+                                records={checkupRecords}
+                                metric="height"
+                              />
+                            )}
+                            {growthMetric === "weight" && (
+                              <GrowthChart
+                                child={selectedChild}
+                                records={checkupRecords}
+                                metric="weight"
+                              />
+                            )}
+                            {growthMetric === "headCircumference" && (
+                              <GrowthChart
+                                child={selectedChild}
+                                records={checkupRecords}
+                                metric="headCircumference"
+                              />
+                            )}
+                          </div>
+
+                          <div>
+                            <h4 className="text-md font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                              <Stethoscope className="text-success-500" size={20} />
+                              体检记录历史
+                            </h4>
+                            <div className="mt-4">
+                              {sortedCheckupRecords.map((record) => (
+                                <HealthCheckupItem
+                                  key={record.id}
+                                  record={record}
+                                  child={selectedChild}
+                                  onEdit={handleEditCheckup}
+                                  onDelete={handleDeleteCheckup}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center py-16 text-gray-400">
+                          <div className="w-20 h-20 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                            <Stethoscope size={40} className="opacity-40" />
+                          </div>
+                          <p className="text-lg mb-2">还没有体检记录</p>
+                          <p className="text-sm mb-6">记录身高、体重、头围，跟踪宝宝生长发育</p>
+                          <button
+                            onClick={handleAddCheckup}
+                            className="btn-success inline-flex items-center gap-2"
+                          >
+                            <Plus size={18} />
+                            添加第一条记录
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </>
@@ -542,6 +831,14 @@ export default function Home() {
         onClose={() => setIsSelfPaidModalOpen(false)}
         onSubmit={handleSelfPaidRecordSubmit}
         record={editingSelfPaidRecord}
+      />
+
+      <HealthCheckupModal
+        isOpen={isCheckupModalOpen}
+        onClose={() => setIsCheckupModalOpen(false)}
+        onSubmit={handleCheckupSubmit}
+        childId={selectedChildId || ""}
+        editingRecord={editingCheckupRecord}
       />
     </div>
   );

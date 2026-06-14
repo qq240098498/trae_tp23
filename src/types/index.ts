@@ -55,3 +55,30 @@ export interface SelfPaidVaccineRecord {
   institution?: string;
   batchNumber?: string;
 }
+
+export interface HealthCheckupRecord {
+  id: string;
+  childId: string;
+  checkupDate: string;
+  height?: number;
+  weight?: number;
+  headCircumference?: number;
+  note?: string;
+}
+
+export interface GrowthPercentile {
+  p3: number;
+  p15: number;
+  p50: number;
+  p85: number;
+  p97: number;
+}
+
+export type GrowthMetricType = "height" | "weight" | "headCircumference";
+
+export interface GrowthDataPoint {
+  ageMonths: number;
+  value: number;
+  percentile?: number;
+  status: "normal" | "attention";
+}

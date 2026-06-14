@@ -4,6 +4,7 @@ import type {
   Child,
   VaccineRecord,
   SelfPaidVaccineRecord,
+  HealthCheckupRecord,
 } from "@/types";
 import { VACCINE_SCHEDULES } from "@/data/vaccineSchedules";
 import { SELF_PAID_VACCINES } from "@/data/selfPaidVaccines";
@@ -13,6 +14,7 @@ interface AppState {
   children: Child[];
   vaccineRecords: VaccineRecord[];
   selfPaidVaccineRecords: SelfPaidVaccineRecord[];
+  healthCheckupRecords: HealthCheckupRecord[];
   selectedChildId: string | null;
   addChild: (child: Omit<Child, "id">) => void;
   updateChild: (id: string, child: Partial<Child>) => void;
@@ -45,6 +47,15 @@ interface AppState {
   skipSelfPaidVaccine: (recordId: string) => void;
   resetSelfPaidVaccine: (recordId: string) => void;
   getSelfPaidRecordsByChild: (childId: string) => SelfPaidVaccineRecord[];
+  addHealthCheckupRecord: (record: Omit<HealthCheckupRecord, "id">) => void;
+  updateHealthCheckupRecord: (
+    id: string,
+    record: Partial<HealthCheckupRecord>
+  ) => void;
+  deleteHealthCheckupRecord: (id: string) => void;
+  getHealthCheckupRecordsByChild: (
+    childId: string
+  ) => HealthCheckupRecord[];
 }
 
 export const useAppStore = create<AppState>()(
@@ -53,6 +64,7 @@ export const useAppStore = create<AppState>()(
       children: [],
       vaccineRecords: [],
       selfPaidVaccineRecords: [],
+      healthCheckupRecords: [],
       selectedChildId: null,
 
       addChild: (childData) => {
@@ -81,6 +93,9 @@ export const useAppStore = create<AppState>()(
             (r) => r.childId !== id
           ),
           selfPaidVaccineRecords: state.selfPaidVaccineRecords.filter(
+            (r) => r.childId !== id
+          ),
+          healthCheckupRecords: state.healthCheckupRecords.filter(
             (r) => r.childId !== id
           ),
           selectedChildId:
@@ -270,6 +285,34 @@ export const useAppStore = create<AppState>()(
         return get().selfPaidVaccineRecords.filter(
           (r) => r.childId === childId
         );
+      },
+
+      addHealthCheckupRecord: (recordData) => {
+        const id = generateId();
+        const newRecord: HealthCheckupRecord = { ...recordData, id };
+        set((state) => ({
+          healthCheckupRecords: [...state.healthCheckupRecords, newRecord],
+        }));
+      },
+
+      updateHealthCheckupRecord: (id, recordData) => {
+        set((state) => ({
+          healthCheckupRecords: state.healthCheckupRecords.map((r) =>
+            r.id === id ? { ...r, ...recordData } : r
+          ),
+        }));
+      },
+
+      deleteHealthCheckupRecord: (id) => {
+        set((state) => ({
+          healthCheckupRecords: state.healthCheckupRecords.filter(
+            (r) => r.id !== id
+          ),
+        }));
+      },
+
+      getHealthCheckupRecordsByChild: (childId) => {
+        return get().healthCheckupRecords.filter((r) => r.childId === childId);
       },
     }),
     {
