@@ -208,9 +208,16 @@ export default function SelfPaidVaccineTimelineItem({
             </div>
           </div>
 
-          <div className="flex-shrink-0 flex flex-col gap-2">
+          <div className="flex-shrink-0 flex flex-wrap gap-2 justify-end">
             {record.status === "recommended" && (
               <>
+                <button
+                  onClick={() => onSkip(record.id)}
+                  className="px-4 py-2 rounded-full font-medium text-gray-500 border-2 border-gray-200 hover:border-danger-300 hover:text-danger-600 hover:bg-danger-50 transition-all duration-200 flex items-center gap-1.5"
+                >
+                  <XCircle size={16} />
+                  不打算接种
+                </button>
                 <button
                   onClick={() => onMarkVaccinated(record)}
                   className={`px-5 py-2.5 rounded-full font-medium transition-all duration-200 shadow-md hover:shadow-lg ${
@@ -220,13 +227,6 @@ export default function SelfPaidVaccineTimelineItem({
                   }`}
                 >
                   标记已接种
-                </button>
-                <button
-                  onClick={() => onSkip(record.id)}
-                  className="px-5 py-2 rounded-full font-medium text-gray-500 hover:text-danger-600 hover:bg-danger-50 transition-all duration-200 flex items-center justify-center gap-1.5"
-                >
-                  <XCircle size={16} />
-                  不打算接种
                 </button>
               </>
             )}

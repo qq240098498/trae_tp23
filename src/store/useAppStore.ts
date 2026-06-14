@@ -92,6 +92,16 @@ export const useAppStore = create<AppState>()(
 
       selectChild: (id) => {
         set({ selectedChildId: id });
+        if (id) {
+          const state = get();
+          const child = state.children.find((c) => c.id === id);
+          const hasSelfPaidRecords = state.selfPaidVaccineRecords.some(
+            (r) => r.childId === id
+          );
+          if (child && !hasSelfPaidRecords) {
+            state.generateSelfPaidVaccineRecords(id, child.birthDate);
+          }
+        }
       },
 
       addVaccineRecord: (recordData) => {
