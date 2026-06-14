@@ -17,6 +17,18 @@ export function calculateAgeMonths(
   return Math.max(0, ageMonths);
 }
 
+export function calculatePreciseAgeMonths(
+  birthDate: string,
+  checkupDate: string
+): number {
+  const birth = new Date(birthDate);
+  const checkup = new Date(checkupDate);
+  const diffMs = checkup.getTime() - birth.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  const preciseMonths = diffDays / 30.4375;
+  return Math.max(0, preciseMonths);
+}
+
 function interpolatePercentile(
   ageMonths: number,
   standardData: Record<number, GrowthPercentile>

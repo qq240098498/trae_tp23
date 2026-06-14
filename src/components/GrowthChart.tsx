@@ -6,6 +6,7 @@ import {
 } from "@/data/growthStandards";
 import {
   calculateAgeMonths,
+  calculatePreciseAgeMonths,
   getGrowthPercentileAtAge,
   calculatePercentileValue,
   getGrowthStatus,
@@ -42,7 +43,7 @@ const GrowthChart = forwardRef<GrowthChartRef, GrowthChartProps>(
 
       const recordAges = records
         .filter((r) => r[metric] !== undefined)
-        .map((r) => calculateAgeMonths(child.birthDate, r.checkupDate));
+        .map((r) => calculatePreciseAgeMonths(child.birthDate, r.checkupDate));
 
       const xMax = Math.max(maxAge, ...recordAges, 12);
       const xMin = 0;
@@ -116,20 +117,29 @@ const GrowthChart = forwardRef<GrowthChartRef, GrowthChartProps>(
       const dataPoints = records
         .filter((r) => r[metric] !== undefined)
         .map((record) => {
-          const age = calculateAgeMonths(child.birthDate, record.checkupDate);
+          const preciseAge = calculatePreciseAgeMonths(
+            child.birthDate,
+            record.checkupDate
+          );
+          const ageForPercentile = Math.floor(preciseAge);
           const value = record[metric]!;
-          const pData = getGrowthPercentileAtAge(child.gender, metric, age);
+          const pData = getGrowthPercentileAtAge(
+            child.gender,
+            metric,
+            ageForPercentile
+          );
           const percentile = pData
             ? calculatePercentileValue(value, pData)
             : 50;
           const status = getGrowthStatus(percentile);
           return {
-            age,
+            age: preciseAge,
+            ageForDisplay: ageForPercentile,
             value,
             percentile,
             status,
             date: record.checkupDate,
-            x: xScale(age),
+            x: xScale(preciseAge),
             y: yScale(value),
           };
         })
@@ -139,11 +149,12 @@ const GrowthChart = forwardRef<GrowthChartRef, GrowthChartProps>(
 
       const xTicks: number[] = [];
       const tickInterval = xMax <= 12 ? 2 : xMax <= 24 ? 3 : 6;
-      for (let i = 0; i <= xMax; i += tickInterval) {
+      const xMaxCeil = Math.ceil(xMax);
+      for (let i = 0; i <= xMaxCeil; i += tickInterval) {
         xTicks.push(i);
       }
-      if (xMax % tickInterval !== 0) {
-        xTicks.push(xMax);
+      if (xMaxCeil % tickInterval !== 0) {
+        xTicks.push(xMaxCeil);
       }
 
       const yTicks: number[] = [];
@@ -262,7 +273,7 @@ const GrowthChart = forwardRef<GrowthChartRef, GrowthChartProps>(
                 strokeWidth="2"
               />
               <title>
-                {`日期: ${point.date}\n年龄: ${point.age}个月\n${label}: ${point.value}${unit}\n百分位: P${point.percentile.toFixed(1)}`}
+                {`日期: ${point.date}\n年龄: ${point.ageForDisplay}个月\n${label}: ${point.value}${unit}\n百分位: P${point.percentile.toFixed(1)}`}
               </title>
             </g>
           ))}
