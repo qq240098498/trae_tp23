@@ -1,12 +1,18 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Child, VaccineRecord } from "@/types";
+import type {
+  Child,
+  VaccineRecord,
+  SelfPaidVaccineRecord,
+} from "@/types";
 import { VACCINE_SCHEDULES } from "@/data/vaccineSchedules";
+import { SELF_PAID_VACCINES } from "@/data/selfPaidVaccines";
 import { addMonths, generateId } from "@/utils/dateUtils";
 
 interface AppState {
   children: Child[];
   vaccineRecords: VaccineRecord[];
+  selfPaidVaccineRecords: SelfPaidVaccineRecord[];
   selectedChildId: string | null;
   addChild: (child: Omit<Child, "id">) => void;
   updateChild: (id: string, child: Partial<Child>) => void;
@@ -26,6 +32,19 @@ interface AppState {
   unmarkVaccinated: (recordId: string) => void;
   generateVaccineRecords: (childId: string, birthDate: string) => void;
   getRecordsByChild: (childId: string) => VaccineRecord[];
+  generateSelfPaidVaccineRecords: (
+    childId: string,
+    birthDate: string
+  ) => void;
+  markSelfPaidVaccinated: (
+    recordId: string,
+    vaccinationDate: string,
+    institution?: string,
+    batchNumber?: string
+  ) => void;
+  skipSelfPaidVaccine: (recordId: string) => void;
+  resetSelfPaidVaccine: (recordId: string) => void;
+  getSelfPaidRecordsByChild: (childId: string) => SelfPaidVaccineRecord[];
 }
 
 export const useAppStore = create<AppState>()(
@@ -33,6 +52,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       children: [],
       vaccineRecords: [],
+      selfPaidVaccineRecords: [],
       selectedChildId: null,
 
       addChild: (childData) => {
@@ -43,6 +63,7 @@ export const useAppStore = create<AppState>()(
           selectedChildId: state.selectedChildId || id,
         }));
         get().generateVaccineRecords(id, childData.birthDate);
+        get().generateSelfPaidVaccineRecords(id, childData.birthDate);
       },
 
       updateChild: (id, childData) => {
@@ -57,6 +78,9 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           children: state.children.filter((c) => c.id !== id),
           vaccineRecords: state.vaccineRecords.filter(
+            (r) => r.childId !== id
+          ),
+          selfPaidVaccineRecords: state.selfPaidVaccineRecords.filter(
             (r) => r.childId !== id
           ),
           selectedChildId:
@@ -148,6 +172,94 @@ export const useAppStore = create<AppState>()(
 
       getRecordsByChild: (childId) => {
         return get().vaccineRecords.filter((r) => r.childId === childId);
+      },
+
+      generateSelfPaidVaccineRecords: (childId, birthDate) => {
+        const records: SelfPaidVaccineRecord[] = [];
+
+        SELF_PAID_VACCINES.forEach((vaccine) => {
+          vaccine.ageMonths.forEach((ageMonth, doseIndex) => {
+            const scheduledDate = addMonths(birthDate, ageMonth);
+            records.push({
+              id: generateId(),
+              childId,
+              vaccineCode: vaccine.code,
+              vaccineName: vaccine.name,
+              dose: doseIndex + 1,
+              scheduledDate,
+              status: "recommended",
+            });
+          });
+        });
+
+        set((state) => ({
+          selfPaidVaccineRecords: [
+            ...state.selfPaidVaccineRecords,
+            ...records,
+          ],
+        }));
+      },
+
+      markSelfPaidVaccinated: (
+        recordId,
+        vaccinationDate,
+        institution,
+        batchNumber
+      ) => {
+        set((state) => ({
+          selfPaidVaccineRecords: state.selfPaidVaccineRecords.map(
+            (r) =>
+              r.id === recordId
+                ? {
+                    ...r,
+                    status: "vaccinated",
+                    vaccinationDate,
+                    institution,
+                    batchNumber,
+                  }
+                : r
+          ),
+        }));
+      },
+
+      skipSelfPaidVaccine: (recordId) => {
+        set((state) => ({
+          selfPaidVaccineRecords: state.selfPaidVaccineRecords.map(
+            (r) =>
+              r.id === recordId
+                ? {
+                    ...r,
+                    status: "skipped",
+                    vaccinationDate: undefined,
+                    institution: undefined,
+                    batchNumber: undefined,
+                  }
+                : r
+          ),
+        }));
+      },
+
+      resetSelfPaidVaccine: (recordId) => {
+        set((state) => ({
+          selfPaidVaccineRecords: state.selfPaidVaccineRecords.map(
+            (r) =>
+              r.id === recordId
+                ? {
+                    ...r,
+                    status: "recommended",
+                    vaccinationDate: undefined,
+                    institution: undefined,
+                    batchNumber: undefined,
+                  }
+                : r
+          ),
+        }));
+      },
+
+      getSelfPaidRecordsByChild: (childId) => {
+        return get().selfPaidVaccineRecords.filter(
+          (r) => r.childId === childId
+        );
       },
     }),
     {

@@ -1,20 +1,37 @@
 import { useState, useMemo } from "react";
-import { Plus, Stethoscope, Syringe, ShieldAlert, CheckCircle2 } from "lucide-react";
+import {
+  Plus,
+  Stethoscope,
+  Syringe,
+  ShieldAlert,
+  CheckCircle2,
+  Coins,
+  XCircle,
+  Sparkles,
+} from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import ChildCard from "@/components/ChildCard";
 import AddChildModal from "@/components/AddChildModal";
 import VaccineRecordModal from "@/components/VaccineRecordModal";
 import VaccineTimelineItem from "@/components/VaccineTimelineItem";
+import SelfPaidVaccineTimelineItem from "@/components/SelfPaidVaccineTimelineItem";
+import SelfPaidVaccineRecordModal from "@/components/SelfPaidVaccineRecordModal";
 import EmptyState from "@/components/EmptyState";
-import type { Child, VaccineRecord } from "@/types";
+import type {
+  Child,
+  VaccineRecord,
+  SelfPaidVaccineRecord,
+} from "@/types";
 import { isOverdue, getDaysUntil } from "@/utils/dateUtils";
 
 type FilterType = "all" | "pending" | "vaccinated" | "overdue";
+type SelfPaidFilterType = "all" | "recommended" | "vaccinated" | "skipped";
 
 export default function Home() {
   const {
     children,
     vaccineRecords,
+    selfPaidVaccineRecords,
     selectedChildId,
     addChild,
     updateChild,
@@ -22,6 +39,9 @@ export default function Home() {
     selectChild,
     markVaccinated,
     unmarkVaccinated,
+    markSelfPaidVaccinated,
+    skipSelfPaidVaccine,
+    resetSelfPaidVaccine,
   } = useAppStore();
 
   const [isAddChildModalOpen, setIsAddChildModalOpen] = useState(false);
@@ -31,7 +51,12 @@ export default function Home() {
   const [editingRecord, setEditingRecord] = useState<VaccineRecord | null>(
     null
   );
+  const [isSelfPaidModalOpen, setIsSelfPaidModalOpen] = useState(false);
+  const [editingSelfPaidRecord, setEditingSelfPaidRecord] =
+    useState<SelfPaidVaccineRecord | null>(null);
   const [filter, setFilter] = useState<FilterType>("all");
+  const [selfPaidFilter, setSelfPaidFilter] =
+    useState<SelfPaidFilterType>("all");
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
 
@@ -84,6 +109,57 @@ export default function Home() {
     ).length;
     return { total, vaccinated, overdue, upcoming };
   }, [childRecords]);
+
+  const selfPaidChildRecords = useMemo(() => {
+    if (!selectedChildId) return [];
+    return selfPaidVaccineRecords.filter((r) => r.childId === selectedChildId);
+  }, [selfPaidVaccineRecords, selectedChildId]);
+
+  const sortedSelfPaidRecords = useMemo(() => {
+    return [...selfPaidChildRecords].sort((a, b) => {
+      const aPriority =
+        a.status === "recommended" ? 0 : a.status === "skipped" ? 2 : 1;
+      const bPriority =
+        b.status === "recommended" ? 0 : b.status === "skipped" ? 2 : 1;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return (
+        new Date(a.scheduledDate).getTime() -
+        new Date(b.scheduledDate).getTime()
+      );
+    });
+  }, [selfPaidChildRecords]);
+
+  const filteredSelfPaidRecords = useMemo(() => {
+    return sortedSelfPaidRecords.filter((record) => {
+      switch (selfPaidFilter) {
+        case "recommended":
+          return record.status === "recommended";
+        case "vaccinated":
+          return record.status === "vaccinated";
+        case "skipped":
+          return record.status === "skipped";
+        default:
+          return true;
+      }
+    });
+  }, [sortedSelfPaidRecords, selfPaidFilter]);
+
+  const selfPaidStats = useMemo(() => {
+    const total = selfPaidChildRecords.length;
+    const vaccinated = selfPaidChildRecords.filter(
+      (r) => r.status === "vaccinated"
+    ).length;
+    const recommended = selfPaidChildRecords.filter(
+      (r) => r.status === "recommended"
+    ).length;
+    const skipped = selfPaidChildRecords.filter(
+      (r) => r.status === "skipped"
+    ).length;
+    const overdue = selfPaidChildRecords.filter(
+      (r) => r.status === "recommended" && isOverdue(r.scheduledDate, false)
+    ).length;
+    return { total, vaccinated, recommended, skipped, overdue };
+  }, [selfPaidChildRecords]);
 
   const getChildVaccineStats = (childId: string) => {
     const records = vaccineRecords.filter((r) => r.childId === childId);
@@ -138,6 +214,36 @@ export default function Home() {
     markVaccinated(recordId, vaccinationDate, institution, batchNumber);
   };
 
+  const handleMarkSelfPaidVaccinated = (record: SelfPaidVaccineRecord) => {
+    setEditingSelfPaidRecord(record);
+    setIsSelfPaidModalOpen(true);
+  };
+
+  const handleSkipSelfPaid = (recordId: string) => {
+    if (window.confirm("确定标记为不打算接种吗？")) {
+      skipSelfPaidVaccine(recordId);
+    }
+  };
+
+  const handleResetSelfPaid = (recordId: string) => {
+    resetSelfPaidVaccine(recordId);
+  };
+
+  const handleUnmarkSelfPaidVaccinated = (recordId: string) => {
+    if (window.confirm("确定要撤销此接种记录吗？")) {
+      resetSelfPaidVaccine(recordId);
+    }
+  };
+
+  const handleSelfPaidRecordSubmit = (
+    recordId: string,
+    vaccinationDate: string,
+    institution?: string,
+    batchNumber?: string
+  ) => {
+    markSelfPaidVaccinated(recordId, vaccinationDate, institution, batchNumber);
+  };
+
   if (children.length === 0) {
     return (
       <div className="min-h-screen">
@@ -157,6 +263,17 @@ export default function Home() {
     { key: "pending", label: "待接种", icon: <Syringe size={16} /> },
     { key: "overdue", label: "已逾期", icon: <ShieldAlert size={16} /> },
     { key: "vaccinated", label: "已接种", icon: <CheckCircle2 size={16} /> },
+  ];
+
+  const selfPaidFilterOptions: {
+    key: SelfPaidFilterType;
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
+    { key: "all", label: "全部", icon: <Stethoscope size={16} /> },
+    { key: "recommended", label: "建议接种", icon: <Sparkles size={16} /> },
+    { key: "vaccinated", label: "已接种", icon: <CheckCircle2 size={16} /> },
+    { key: "skipped", label: "不打算接种", icon: <XCircle size={16} /> },
   ];
 
   return (
@@ -312,6 +429,87 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+
+                <div className="card p-6 mt-6">
+                  <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+                    <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                      <Sparkles className="text-amber-500" size={22} />
+                      自费疫苗建议
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {selfPaidFilterOptions.map((opt) => (
+                        <button
+                          key={opt.key}
+                          onClick={() => setSelfPaidFilter(opt.key)}
+                          className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                            selfPaidFilter === opt.key
+                              ? "bg-amber-500 text-white shadow-md"
+                              : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                          }`}
+                        >
+                          {opt.icon}
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-gray-50 rounded-xl p-4">
+                      <p className="text-xs text-gray-500 mb-1">总剂数</p>
+                      <p className="text-2xl font-bold text-gray-800">
+                        {selfPaidStats.total}
+                      </p>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-4">
+                      <p className="text-xs text-amber-600 mb-1">建议接种</p>
+                      <p className="text-2xl font-bold text-amber-700">
+                        {selfPaidStats.recommended}
+                      </p>
+                    </div>
+                    <div className="bg-success-50 rounded-xl p-4">
+                      <p className="text-xs text-success-600 mb-1">已接种</p>
+                      <p className="text-2xl font-bold text-success-700">
+                        {selfPaidStats.vaccinated}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-4">
+                      <p className="text-xs text-gray-500 mb-1">不打算接种</p>
+                      <p className="text-2xl font-bold text-gray-600">
+                        {selfPaidStats.skipped}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selfPaidStats.overdue > 0 && (
+                    <div className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-xl flex items-center gap-3">
+                      <ShieldAlert className="text-danger-500 flex-shrink-0" size={22} />
+                      <p className="text-sm text-danger-700">
+                        有 <span className="font-bold">{selfPaidStats.overdue}</span> 剂自费疫苗已超过建议接种日期，请尽快安排。
+                      </p>
+                    </div>
+                  )}
+
+                  {filteredSelfPaidRecords.length > 0 ? (
+                    <div className="mt-4">
+                      {filteredSelfPaidRecords.map((record) => (
+                        <SelfPaidVaccineTimelineItem
+                          key={record.id}
+                          record={record}
+                          onMarkVaccinated={handleMarkSelfPaidVaccinated}
+                          onSkip={handleSkipSelfPaid}
+                          onReset={handleResetSelfPaid}
+                          onUnmarkVaccinated={handleUnmarkSelfPaidVaccinated}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-400">
+                      <Coins size={48} className="mx-auto mb-3 opacity-30" />
+                      <p>暂无{selfPaidFilterOptions.find((f) => f.key === selfPaidFilter)?.label}的自费疫苗记录</p>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <div className="card p-12 text-center text-gray-400">
@@ -337,6 +535,13 @@ export default function Home() {
         onClose={() => setIsVaccineRecordModalOpen(false)}
         onSubmit={handleVaccineRecordSubmit}
         record={editingRecord}
+      />
+
+      <SelfPaidVaccineRecordModal
+        isOpen={isSelfPaidModalOpen}
+        onClose={() => setIsSelfPaidModalOpen(false)}
+        onSubmit={handleSelfPaidRecordSubmit}
+        record={editingSelfPaidRecord}
       />
     </div>
   );

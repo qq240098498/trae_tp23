@@ -27,3 +27,31 @@ export interface VaccineRecord {
 }
 
 export type VaccineStatus = "vaccinated" | "pending" | "overdue";
+
+export interface SelfPaidVaccine {
+  code: string;
+  name: string;
+  doses: number;
+  ageMonths: number[];
+  description: string;
+  priceRange: string;
+  pricePerDose: number;
+}
+
+export type SelfPaidVaccineStatus =
+  | "recommended"
+  | "vaccinated"
+  | "skipped";
+
+export interface SelfPaidVaccineRecord {
+  id: string;
+  childId: string;
+  vaccineCode: string;
+  vaccineName: string;
+  dose: number;
+  scheduledDate: string;
+  status: SelfPaidVaccineStatus;
+  vaccinationDate?: string;
+  institution?: string;
+  batchNumber?: string;
+}
