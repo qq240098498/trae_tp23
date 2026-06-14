@@ -7,6 +7,8 @@ import {
   calculatePercentileValue,
   getGrowthStatus,
 } from "./growthUtils";
+import type { VaccineCheckReportData, VaccineCheckItem } from "./vaccineCheckReport";
+import { ageMonthToText } from "./vaccineCheckReport";
 
 export function svgToDataUrl(svg: SVGSVGElement): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
@@ -264,3 +266,270 @@ export function getRecordAnalysis(
 
   return result;
 }
+
+function formatDateCN(date: Date): string {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${year}年${month}月${day}日`;
+}
+
+function addPdfVaccineStatusLabel(
+  pdf: jsPDF,
+  item: VaccineCheckItem,
+  x: number,
+  y: number,
+  pageHeight: number,
+  margin: number,
+  pageWidth: number
+): number {
+  const statusMap = {
+    completed: "[完成]",
+    partial: "[部分]",
+    missing: "[漏种]",
+  };
+  pdf.setFontSize(11);
+  pdf.setFont("helvetica", "bold");
+  pdf.text(`${item.name}`, x, y);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(9);
+  pdf.text(item.description, x + 60, y);
+
+  pdf.setFontSize(9);
+  if (item.status === "completed") {
+    pdf.setTextColor(92, 184, 92);
+  } else if (item.status === "partial") {
+    pdf.setTextColor(230, 184, 0);
+  } else {
+    pdf.setTextColor(217, 83, 79);
+  }
+  pdf.text(statusMap[item.status], pageWidth - margin - 20, y);
+  pdf.setTextColor(0);
+
+  y += 6;
+
+  pdf.setFontSize(9);
+  pdf.setFont("helvetica", "normal");
+  const progressText = `${item.completedDoses}/${item.totalDoses} 剂次完成`;
+  pdf.text(progressText, x + 2, y);
+  y += 5;
+
+  item.doseDetails.forEach((dose) => {
+    if (y + 10 > pageHeight - margin) {
+      pdf.addPage();
+      y = margin;
+    }
+    const statusText = dose.isCompleted
+      ? `第${dose.dose}剂 ${ageMonthToText(dose.ageMonth)} - 已接种 ${dose.vaccinationDate || ""}`
+      : `第${dose.dose}剂 ${ageMonthToText(dose.ageMonth)} - 未接种`;
+    if (dose.isCompleted) {
+      pdf.setTextColor(92, 184, 92);
+    } else {
+      pdf.setTextColor(217, 83, 79);
+    }
+    pdf.setFontSize(8);
+    pdf.text("  " + statusText, x + 2, y);
+    pdf.setTextColor(0);
+    y += 5;
+  });
+
+  return y;
+}
+
+export async function exportVaccineCheckPdf(report: VaccineCheckReportData) {
+  const pdf = new jsPDF("p", "mm", "a4");
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 18;
+  let y = margin;
+
+  pdf.setFontSize(8);
+  pdf.setFont("helvetica", "bold");
+  pdf.text("国家免疫规划疫苗", pageWidth / 2, y, { align: "center" });
+  y += 4;
+  pdf.setFontSize(18);
+  pdf.setFont("helvetica", "bold");
+  pdf.text("儿童入园/入学预防接种查验报告", pageWidth / 2, y, { align: "center" });
+  y += 10;
+
+  pdf.setLineWidth(0.6);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  pdf.setFontSize(12);
+  pdf.setFont("helvetica", "bold");
+  pdf.text("儿童基本信息", margin, y);
+  y += 7;
+
+  pdf.setFontSize(10);
+  pdf.setFont("helvetica", "normal");
+  pdf.text(`姓名：${report.child.name}`, margin, y);
+  pdf.text(
+    `性别：${report.child.gender === "male" ? "男" : "女"}`,
+    margin + 60,
+    y
+  );
+  y += 6;
+  pdf.text(`出生日期：${report.child.birthDate}`, margin, y);
+  pdf.text(
+    `当前年龄：${ageMonthToText(report.currentAgeMonths)}`,
+    margin + 60,
+    y
+  );
+  y += 6;
+  pdf.text(
+    `报告日期：${formatDateCN(new Date())}`,
+    margin,
+    y
+  );
+  y += 10;
+
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  pdf.setFontSize(12);
+  pdf.setFont("helvetica", "bold");
+  let statusTitle = "查验结论：";
+  if (report.overallStatus === "completed") {
+    pdf.setTextColor(92, 184, 92);
+    statusTitle += "查验合格";
+  } else if (report.overallStatus === "partial") {
+    pdf.setTextColor(230, 184, 0);
+    statusTitle += "部分完成";
+  } else {
+    pdf.setTextColor(217, 83, 79);
+    statusTitle += "需要补种";
+  }
+  pdf.text(statusTitle, margin, y);
+  pdf.setTextColor(0);
+  y += 7;
+
+  pdf.setFontSize(10);
+  pdf.setFont("helvetica", "normal");
+  const completion =
+    report.totalRequiredDoses > 0
+      ? (report.completedDoses / report.totalRequiredDoses) * 100
+      : 0;
+  pdf.text(
+    `接种完成率：${report.completedDoses}/${report.totalRequiredDoses} 剂次 (${completion.toFixed(0)}%)`,
+    margin,
+    y
+  );
+  y += 6;
+  pdf.text(
+    `已完成疫苗：${report.completedVaccines.length} 种`,
+    margin,
+    y
+  );
+  pdf.text(
+    `部分完成：${report.partiallyCompletedVaccines.length} 种`,
+    margin + 50,
+    y
+  );
+  pdf.text(
+    `漏种疫苗：${report.missingVaccines.length} 种`,
+    margin + 100,
+    y
+  );
+  y += 10;
+
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  pdf.setFontSize(12);
+  pdf.setFont("helvetica", "bold");
+  pdf.text("疫苗接种情况明细", margin, y);
+  y += 10;
+
+  const addVaccineSection = (
+    title: string, items: VaccineCheckItem[]) => {
+      if (items.length === 0) return;
+      if (y + 8 > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+      }
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`${title} (${items.length}种)`, margin, y);
+      y += 7;
+
+      items.forEach((item) => {
+        if (y + 30 > pageHeight - margin) {
+          pdf.addPage();
+          y = margin;
+        }
+        y = addPdfVaccineStatusLabel(
+          pdf,
+          item,
+          margin + 2,
+          y,
+          pageHeight,
+          margin,
+          pageWidth
+        );
+        y += 4;
+      });
+      y += 4;
+    };
+
+  addVaccineSection("一、已完成接种的疫苗", report.completedVaccines);
+  addVaccineSection("二、部分完成的疫苗", report.partiallyCompletedVaccines);
+  addVaccineSection("三、漏种的疫苗", report.missingVaccines);
+
+  if (y + 50 > pageHeight - margin) {
+    pdf.addPage();
+    y = margin;
+  } else {
+    y += 15;
+  }
+
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 10;
+
+  pdf.setFontSize(9);
+  pdf.setFont("helvetica", "normal");
+  pdf.setTextColor(120, 120, 120);
+  const noteLines = [
+    "说明：",
+    "1. 本报告根据国家免疫规划疫苗儿童免疫程序（6岁/入学前）要求生成。",
+    "2. 如对查验结果有疑问，请咨询当地接种单位或疾病预防控制中心。",
+    "3. 漏种疫苗请尽快到就近的接种单位进行补种。",
+    "4. 本报告仅作参考，具体以接种记录请以接种单位出具的正式证明为准。",
+  ];
+  noteLines.forEach((line) => {
+    pdf.text(line, margin, y);
+    y += 5;
+  });
+  y += 10;
+
+  pdf.setFontSize(10);
+  pdf.setTextColor(0);
+  pdf.text("家长/监护人签字：_______________", margin, y);
+  pdf.text("接种单位盖章：_______________", margin + 85, y);
+  y += 10;
+  pdf.text(
+    `日期：${formatDateCN(new Date())}`,
+    pageWidth - margin - 40,
+    y
+  );
+
+  pdf.setFontSize(8);
+  pdf.setTextColor(150, 150, 150);
+  y += 15;
+  pdf.text(
+    "本报告由儿童健康记录工具自动生成",
+    pageWidth / 2,
+    y,
+    { align: "center" }
+  );
+  pdf.setTextColor(0);
+
+  const fileName = `${report.child.name}_入园入学接种查验报告_${new Date()
+    .toLocaleDateString("zh-CN")
+    .replace(/\//g, "-")}.pdf`;
+  pdf.save(fileName);
+}
+

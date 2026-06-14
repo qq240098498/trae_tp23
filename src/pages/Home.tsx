@@ -14,6 +14,7 @@ import {
   Scale,
   Baby,
   AlertCircle,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import ChildCard from "@/components/ChildCard";
@@ -28,6 +29,7 @@ import GrowthChart, { type GrowthChartRef } from "@/components/GrowthChart";
 import EmptyState from "@/components/EmptyState";
 import AdverseReactionModal from "@/components/AdverseReactionModal";
 import AdverseReactionHistory from "@/components/AdverseReactionHistory";
+import VaccineCheckReportModal from "@/components/VaccineCheckReportModal";
 import type {
   Child,
   VaccineRecord,
@@ -37,7 +39,8 @@ import type {
   AdverseReactionRecord,
 } from "@/types";
 import { isOverdue, getDaysUntil } from "@/utils/dateUtils";
-import { exportGrowthPdf } from "@/utils/pdfExport";
+import { exportGrowthPdf, exportVaccineCheckPdf } from "@/utils/pdfExport";
+import { generateVaccineCheckReport } from "@/utils/vaccineCheckReport";
 
 type FilterType = "all" | "pending" | "vaccinated" | "overdue";
 type SelfPaidFilterType = "all" | "recommended" | "vaccinated" | "skipped";
@@ -95,6 +98,8 @@ export default function Home() {
     useState<VaccineRecord | null>(null);
   const [editingAdverseReaction, setEditingAdverseReaction] =
     useState<AdverseReactionRecord | null>(null);
+  const [isVaccineCheckReportOpen, setIsVaccineCheckReportOpen] =
+    useState(false);
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
 
@@ -421,6 +426,21 @@ export default function Home() {
     }
   };
 
+  const handleOpenVaccineCheckReport = () => {
+    setIsVaccineCheckReportOpen(true);
+  };
+
+  const handleExportVaccineCheckPdf = async () => {
+    if (!selectedChild) return;
+    try {
+      const report = generateVaccineCheckReport(selectedChild, childRecords);
+      await exportVaccineCheckPdf(report);
+    } catch (error) {
+      console.error("导出查验报告 PDF 失败:", error);
+      alert("导出查验报告 PDF 失败，请重试");
+    }
+  };
+
   if (children.length === 0) {
     return (
       <div className="min-h-screen">
@@ -682,15 +702,26 @@ export default function Home() {
                       </button>
                     </div>
 
-                    {activeTab === "checkup" && (
-                      <button
-                        onClick={handleAddCheckup}
-                        className="btn-success flex items-center gap-2 text-sm"
-                      >
-                        <Plus size={16} />
-                        添加记录
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {activeTab === "vaccine" && (
+                        <button
+                          onClick={handleOpenVaccineCheckReport}
+                          className="btn-success flex items-center gap-2 text-sm"
+                        >
+                          <ClipboardCheck size={16} />
+                          入园/入学查验报告
+                        </button>
+                      )}
+                      {activeTab === "checkup" && (
+                        <button
+                          onClick={handleAddCheckup}
+                          className="btn-success flex items-center gap-2 text-sm"
+                        >
+                          <Plus size={16} />
+                          添加记录
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {activeTab === "vaccine" && (
@@ -987,6 +1018,14 @@ export default function Home() {
         onSubmit={handleAdverseReactionSubmit}
         vaccineRecord={adverseReactionVaccineRecord}
         editingRecord={editingAdverseReaction}
+      />
+
+      <VaccineCheckReportModal
+        isOpen={isVaccineCheckReportOpen}
+        onClose={() => setIsVaccineCheckReportOpen(false)}
+        child={selectedChild}
+        vaccineRecords={childRecords}
+        onExportPdf={handleExportVaccineCheckPdf}
       />
     </div>
   );
