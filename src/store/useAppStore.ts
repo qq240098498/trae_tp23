@@ -5,6 +5,7 @@ import type {
   VaccineRecord,
   SelfPaidVaccineRecord,
   HealthCheckupRecord,
+  AdverseReactionRecord,
 } from "@/types";
 import { VACCINE_SCHEDULES } from "@/data/vaccineSchedules";
 import { SELF_PAID_VACCINES } from "@/data/selfPaidVaccines";
@@ -15,6 +16,7 @@ interface AppState {
   vaccineRecords: VaccineRecord[];
   selfPaidVaccineRecords: SelfPaidVaccineRecord[];
   healthCheckupRecords: HealthCheckupRecord[];
+  adverseReactionRecords: AdverseReactionRecord[];
   selectedChildId: string | null;
   addChild: (child: Omit<Child, "id">) => void;
   updateChild: (id: string, child: Partial<Child>) => void;
@@ -56,6 +58,20 @@ interface AppState {
   getHealthCheckupRecordsByChild: (
     childId: string
   ) => HealthCheckupRecord[];
+  addAdverseReactionRecord: (
+    record: Omit<AdverseReactionRecord, "id">
+  ) => void;
+  updateAdverseReactionRecord: (
+    id: string,
+    record: Partial<AdverseReactionRecord>
+  ) => void;
+  deleteAdverseReactionRecord: (id: string) => void;
+  getAdverseReactionRecordsByChild: (
+    childId: string
+  ) => AdverseReactionRecord[];
+  getAdverseReactionRecordsByVaccine: (
+    vaccineRecordId: string
+  ) => AdverseReactionRecord[];
 }
 
 export const useAppStore = create<AppState>()(
@@ -65,6 +81,7 @@ export const useAppStore = create<AppState>()(
       vaccineRecords: [],
       selfPaidVaccineRecords: [],
       healthCheckupRecords: [],
+      adverseReactionRecords: [],
       selectedChildId: null,
 
       addChild: (childData) => {
@@ -96,6 +113,9 @@ export const useAppStore = create<AppState>()(
             (r) => r.childId !== id
           ),
           healthCheckupRecords: state.healthCheckupRecords.filter(
+            (r) => r.childId !== id
+          ),
+          adverseReactionRecords: state.adverseReactionRecords.filter(
             (r) => r.childId !== id
           ),
           selectedChildId:
@@ -313,6 +333,45 @@ export const useAppStore = create<AppState>()(
 
       getHealthCheckupRecordsByChild: (childId) => {
         return get().healthCheckupRecords.filter((r) => r.childId === childId);
+      },
+
+      addAdverseReactionRecord: (recordData) => {
+        const id = generateId();
+        const newRecord: AdverseReactionRecord = { ...recordData, id };
+        set((state) => ({
+          adverseReactionRecords: [
+            ...state.adverseReactionRecords,
+            newRecord,
+          ],
+        }));
+      },
+
+      updateAdverseReactionRecord: (id, recordData) => {
+        set((state) => ({
+          adverseReactionRecords: state.adverseReactionRecords.map((r) =>
+            r.id === id ? { ...r, ...recordData } : r
+          ),
+        }));
+      },
+
+      deleteAdverseReactionRecord: (id) => {
+        set((state) => ({
+          adverseReactionRecords: state.adverseReactionRecords.filter(
+            (r) => r.id !== id
+          ),
+        }));
+      },
+
+      getAdverseReactionRecordsByChild: (childId) => {
+        return get().adverseReactionRecords.filter(
+          (r) => r.childId === childId
+        );
+      },
+
+      getAdverseReactionRecordsByVaccine: (vaccineRecordId) => {
+        return get().adverseReactionRecords.filter(
+          (r) => r.vaccineRecordId === vaccineRecordId
+        );
       },
     }),
     {

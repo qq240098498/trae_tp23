@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Scale,
   Baby,
+  AlertCircle,
 } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import ChildCard from "@/components/ChildCard";
@@ -25,19 +26,22 @@ import HealthCheckupModal from "@/components/HealthCheckupModal";
 import HealthCheckupItem from "@/components/HealthCheckupItem";
 import GrowthChart, { type GrowthChartRef } from "@/components/GrowthChart";
 import EmptyState from "@/components/EmptyState";
+import AdverseReactionModal from "@/components/AdverseReactionModal";
+import AdverseReactionHistory from "@/components/AdverseReactionHistory";
 import type {
   Child,
   VaccineRecord,
   SelfPaidVaccineRecord,
   HealthCheckupRecord,
   GrowthMetricType,
+  AdverseReactionRecord,
 } from "@/types";
 import { isOverdue, getDaysUntil } from "@/utils/dateUtils";
 import { exportGrowthPdf } from "@/utils/pdfExport";
 
 type FilterType = "all" | "pending" | "vaccinated" | "overdue";
 type SelfPaidFilterType = "all" | "recommended" | "vaccinated" | "skipped";
-type TabType = "vaccine" | "selfPaid" | "checkup";
+type TabType = "vaccine" | "selfPaid" | "checkup" | "adverseReaction";
 
 export default function Home() {
   const {
@@ -45,6 +49,7 @@ export default function Home() {
     vaccineRecords,
     selfPaidVaccineRecords,
     healthCheckupRecords,
+    adverseReactionRecords,
     selectedChildId,
     addChild,
     updateChild,
@@ -58,6 +63,9 @@ export default function Home() {
     addHealthCheckupRecord,
     updateHealthCheckupRecord,
     deleteHealthCheckupRecord,
+    addAdverseReactionRecord,
+    updateAdverseReactionRecord,
+    deleteAdverseReactionRecord,
   } = useAppStore();
 
   const [isAddChildModalOpen, setIsAddChildModalOpen] = useState(false);
@@ -81,6 +89,12 @@ export default function Home() {
   const heightChartRef = useRef<GrowthChartRef>(null);
   const weightChartRef = useRef<GrowthChartRef>(null);
   const headChartRef = useRef<GrowthChartRef>(null);
+  const [isAdverseReactionModalOpen, setIsAdverseReactionModalOpen] =
+    useState(false);
+  const [adverseReactionVaccineRecord, setAdverseReactionVaccineRecord] =
+    useState<VaccineRecord | null>(null);
+  const [editingAdverseReaction, setEditingAdverseReaction] =
+    useState<AdverseReactionRecord | null>(null);
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
 
@@ -207,6 +221,38 @@ export default function Home() {
     return { total, hasHeight, hasWeight, hasHead, lastRecord };
   }, [checkupRecords, sortedCheckupRecords]);
 
+  const childAdverseReactions = useMemo(() => {
+    if (!selectedChildId) return [];
+    return adverseReactionRecords.filter(
+      (r) => r.childId === selectedChildId
+    );
+  }, [adverseReactionRecords, selectedChildId]);
+
+  const adverseReactionStats = useMemo(() => {
+    const total = childAdverseReactions.length;
+    const mild = childAdverseReactions.filter(
+      (r) => r.severity === "mild"
+    ).length;
+    const moderate = childAdverseReactions.filter(
+      (r) => r.severity === "moderate"
+    ).length;
+    const severe = childAdverseReactions.filter(
+      (r) => r.severity === "severe"
+    ).length;
+    const hasFever = childAdverseReactions.filter((r) =>
+      r.reactions.includes("fever")
+    ).length;
+    return { total, mild, moderate, severe, hasFever };
+  }, [childAdverseReactions]);
+
+  const getVaccineAdverseReactions = (
+    vaccineRecordId: string
+  ): AdverseReactionRecord[] => {
+    return adverseReactionRecords.filter(
+      (r) => r.vaccineRecordId === vaccineRecordId
+    );
+  };
+
   const getChildVaccineStats = (childId: string) => {
     const records = vaccineRecords.filter((r) => r.childId === childId);
     return {
@@ -313,6 +359,44 @@ export default function Home() {
       updateHealthCheckupRecord(editingCheckupRecord.id, data);
     } else {
       addHealthCheckupRecord(data);
+    }
+  };
+
+  const handleAddAdverseReaction = (record: VaccineRecord) => {
+    setAdverseReactionVaccineRecord(record);
+    const reactions = getVaccineAdverseReactions(record.id);
+    if (reactions.length > 0) {
+      setEditingAdverseReaction(reactions[0]);
+    } else {
+      setEditingAdverseReaction(null);
+    }
+    setIsAdverseReactionModalOpen(true);
+  };
+
+  const handleEditAdverseReaction = (
+    record: AdverseReactionRecord
+  ) => {
+    const vaccineRec = vaccineRecords.find(
+      (r) => r.id === record.vaccineRecordId
+    );
+    setAdverseReactionVaccineRecord(vaccineRec || null);
+    setEditingAdverseReaction(record);
+    setIsAdverseReactionModalOpen(true);
+  };
+
+  const handleDeleteAdverseReaction = (recordId: string) => {
+    if (window.confirm("确定要删除这条副反应记录吗？")) {
+      deleteAdverseReactionRecord(recordId);
+    }
+  };
+
+  const handleAdverseReactionSubmit = (
+    data: Omit<AdverseReactionRecord, "id"> & { id?: string }
+  ) => {
+    if (data.id) {
+      updateAdverseReactionRecord(data.id, data);
+    } else {
+      addAdverseReactionRecord(data);
     }
   };
 
@@ -585,6 +669,17 @@ export default function Home() {
                         <Stethoscope size={16} />
                         体检记录
                       </button>
+                      <button
+                        onClick={() => setActiveTab("adverseReaction")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                          activeTab === "adverseReaction"
+                            ? "bg-white text-warning-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <AlertCircle size={16} />
+                        副反应
+                      </button>
                     </div>
 
                     {activeTab === "checkup" && (
@@ -600,6 +695,28 @@ export default function Home() {
 
                   {activeTab === "vaccine" && (
                     <>
+                      {childAdverseReactions.length > 0 &&
+                        stats.upcoming > 0 && (
+                          <div className="mb-4 p-4 bg-warning-50 border border-warning-200 rounded-xl flex items-start gap-3">
+                            <AlertCircle
+                              className="text-warning-500 flex-shrink-0 mt-0.5"
+                              size={20}
+                            />
+                            <div>
+                              <p className="text-sm font-medium text-warning-800">
+                                副反应历史提醒
+                              </p>
+                              <p className="text-sm text-warning-700 mt-1">
+                                该宝宝之前接种疫苗后出现过副反应，下次接种前请留意。如有疑虑，建议咨询医生。
+                              </p>
+                              <p className="text-xs text-warning-600 mt-2">
+                                历史副反应 {childAdverseReactions.length} 次，
+                                其中重度 {adverseReactionStats.severe} 次
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
                       <div className="flex flex-wrap gap-2 mb-4">
                         {filterOptions.map((opt) => (
                           <button
@@ -625,6 +742,10 @@ export default function Home() {
                               record={record}
                               onMarkVaccinated={handleMarkVaccinated}
                               onUnmarkVaccinated={handleUnmarkVaccinated}
+                              onAddAdverseReaction={handleAddAdverseReaction}
+                              adverseReactions={getVaccineAdverseReactions(
+                                record.id
+                              )}
                             />
                           ))}
                         </div>
@@ -798,6 +919,25 @@ export default function Home() {
                       )}
                     </>
                   )}
+
+                  {activeTab === "adverseReaction" && (
+                    <>
+                      <div className="mb-6">
+                        <h4 className="text-md font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                          <AlertCircle
+                            className="text-warning-500"
+                            size={20}
+                          />
+                          副反应历史
+                        </h4>
+                        <AdverseReactionHistory
+                          records={childAdverseReactions}
+                          onEdit={handleEditAdverseReaction}
+                          onDelete={handleDeleteAdverseReaction}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </>
             ) : (
@@ -839,6 +979,14 @@ export default function Home() {
         onSubmit={handleCheckupSubmit}
         childId={selectedChildId || ""}
         editingRecord={editingCheckupRecord}
+      />
+
+      <AdverseReactionModal
+        isOpen={isAdverseReactionModalOpen}
+        onClose={() => setIsAdverseReactionModalOpen(false)}
+        onSubmit={handleAdverseReactionSubmit}
+        vaccineRecord={adverseReactionVaccineRecord}
+        editingRecord={editingAdverseReaction}
       />
     </div>
   );

@@ -82,3 +82,30 @@ export interface GrowthDataPoint {
   percentile?: number;
   status: "normal" | "attention";
 }
+
+export type AdverseReactionType =
+  | "fever"
+  | "crying"
+  | "local_redness"
+  | "local_swelling"
+  | "fatigue"
+  | "poor_appetite"
+  | "vomiting"
+  | "diarrhea"
+  | "rash"
+  | "other";
+
+export interface AdverseReactionRecord {
+  id: string;
+  childId: string;
+  vaccineRecordId: string;
+  vaccineName: string;
+  vaccineDose: number;
+  reactionDate: string;
+  reactions: AdverseReactionType[];
+  otherReaction?: string;
+  feverTemperature?: number;
+  treatment: string;
+  notes?: string;
+  severity: "mild" | "moderate" | "severe";
+}

@@ -1,11 +1,24 @@
-import { Syringe, CheckCircle, Clock, AlertTriangle, Undo2 } from "lucide-react";
-import type { VaccineRecord, VaccineStatus } from "@/types";
+import {
+  Syringe,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  Undo2,
+  AlertCircle,
+} from "lucide-react";
+import type {
+  VaccineRecord,
+  VaccineStatus,
+  AdverseReactionRecord,
+} from "@/types";
 import { getDaysUntil, isOverdue } from "@/utils/dateUtils";
 
 interface VaccineTimelineItemProps {
   record: VaccineRecord;
   onMarkVaccinated: (record: VaccineRecord) => void;
   onUnmarkVaccinated: (recordId: string) => void;
+  onAddAdverseReaction: (record: VaccineRecord) => void;
+  adverseReactions: AdverseReactionRecord[];
 }
 
 function getStatus(
@@ -21,6 +34,8 @@ export default function VaccineTimelineItem({
   record,
   onMarkVaccinated,
   onUnmarkVaccinated,
+  onAddAdverseReaction,
+  adverseReactions,
 }: VaccineTimelineItemProps) {
   const status = getStatus(record.scheduledDate, record.isVaccinated);
   const daysUntil = getDaysUntil(record.scheduledDate);
@@ -153,12 +168,24 @@ export default function VaccineTimelineItem({
                       </span>
                     </p>
                   )}
+                  {adverseReactions.length > 0 && (
+                    <p className="text-sm text-gray-600 flex items-center gap-2">
+                      <AlertCircle
+                        size={14}
+                        className="text-warning-500"
+                      />
+                      <span>副反应记录：</span>
+                      <span className="font-medium text-warning-600">
+                        {adverseReactions.length} 条
+                      </span>
+                    </p>
+                  )}
                 </>
               )}
             </div>
           </div>
 
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 flex flex-col gap-2 items-end">
             {!record.isVaccinated ? (
               <button
                 onClick={() => onMarkVaccinated(record)}
@@ -171,14 +198,30 @@ export default function VaccineTimelineItem({
                 标记已接种
               </button>
             ) : (
-              <button
-                onClick={() => onUnmarkVaccinated(record.id)}
-                className="px-4 py-2 rounded-full font-medium text-gray-500 hover:text-danger-600 hover:bg-danger-50 transition-all duration-200 flex items-center gap-1.5"
-                title="撤销接种"
-              >
-                <Undo2 size={16} />
-                撤销
-              </button>
+              <>
+                <button
+                  onClick={() => onAddAdverseReaction(record)}
+                  className="px-4 py-2 rounded-full font-medium text-warning-600 hover:bg-warning-50 transition-all duration-200 flex items-center gap-1.5 border border-warning-200"
+                  title={
+                    adverseReactions.length > 0
+                      ? "查看/编辑副反应"
+                      : "记录副反应"
+                  }
+                >
+                  <AlertCircle size={16} />
+                  {adverseReactions.length > 0
+                    ? "副反应"
+                    : "记录副反应"}
+                </button>
+                <button
+                  onClick={() => onUnmarkVaccinated(record.id)}
+                  className="px-4 py-2 rounded-full font-medium text-gray-500 hover:text-danger-600 hover:bg-danger-50 transition-all duration-200 flex items-center gap-1.5"
+                  title="撤销接种"
+                >
+                  <Undo2 size={16} />
+                  撤销
+                </button>
+              </>
             )}
           </div>
         </div>
